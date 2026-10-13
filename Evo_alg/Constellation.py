@@ -35,7 +35,14 @@ class Constellation:
     # ==========================================================
     def get_cost(self):
         """
-        Computes the deployment cost of the constellation.
+        Function that computes the deployment cost of the constellation.
+
+        The cost combines a per-satellite term, 0.4 * (S * P), with a
+        per-orbital-plane term, 30 * P.
+
+        :param self: Self
+
+        :returns: Total deployment cost of the constellation.
         """
         total_cost = 0.4 * self.S * self.P + 30 *self.P
         
@@ -46,7 +53,31 @@ class Constellation:
     #  LATENCY
     # ==========================================================
     def get_latency(self, ts, satellites, ground_pairs=GROUND_PAIRS, min_elev=25, duration_s=5400, time_step_s=225, min_isl_alt_km=80.0, penalize_unreachable=True):
-        
+        """
+        Function that computes the mean and standard deviation of the
+        round-trip propagation latency of the constellation.
+
+        For each time instant over the evaluation window, the shortest ground-to-ground
+        path is computed for every ground pair. The one-way latency is converted to
+        round-trip time (RTT). If a ground pair is unreachable and
+        penalize_unreachable=True, a penalty latency of 1e9 ms is returned.
+
+        :param self: Self
+        :param ts: Skyfield timescale object used to generate the evaluation times.
+        :param satellites: List of satellite objects used to compute the constellation geometry.
+        :param ground_pairs: List of ground-station pairs to evaluate, in the format
+                            (name, gateway_coordinates, user_terminal_coordinates).
+        :param min_elev: Minimum elevation angle in degrees for a satellite to be visible.
+        :param duration_s: Total evaluation duration in seconds.
+        :param time_step_s: Time step in seconds between evaluation instants.
+        :param min_isl_alt_km: Minimum altitude in km required for an inter-satellite link.
+        :param penalize_unreachable: If True, returns a penalty latency when no valid
+                                    path is available.
+
+        :returns: Tuple with:
+            - Mean round-trip latency in milliseconds;
+            - Standard deviation of the round-trip latency in milliseconds.
+        """
         times = self.__get_times_over_duration__(ts, duration_s, time_step_s)
         sat_lats, sat_lons, sat_xyz = self.__get_sat_geometry__(satellites, times)
 
@@ -104,19 +135,26 @@ class Constellation:
     # ==========================================================
     def get_coverage(self, satellites, times, grid_points, min_elev, K=2):  
         """
-        Computes two coverage metrics in a single pass:
-        1. K-fold coverage: % of points covered by at least K satellites
-        2. Mean Best Elevation (MBE): mean elevation of the best visible satellite per point
+        Function that computes the coverage metrics of the constellation.
 
-        Coverage is determined geometrically using maximum central angle:
-        θ_max = arccos((R/(R+h)) * cos(min_elev))
+        Calculates two coverage metrics in a single pass:
+        1. K-fold coverage: percentage of grid points covered by at least K satellites.
+        2. Mean Best Elevation (MBE): mean elevation of the best visible satellite
+        for each visible grid point.
 
-        :param satellites:  List of Skyfield satellite objects
-        :param times:       List of Skyfield time objects
-        :param grid_points: List of (lat, lon) tuples
-        :param min_elev:    Minimum elevation angle in degrees
-        :param K:           Minimum number of satellites for K-fold coverage
-        :returns: (kfold_coverage_pct, mean_best_elevation_deg)
+        Coverage is determined geometrically using the maximum central angle:
+        theta_max = arccos((R / (R + h)) * cos(min_elev)) - min_elev.
+
+        :param self: Self
+        :param satellites: List of Skyfield satellite objects.
+        :param times: List of Skyfield time objects over which coverage is evaluated.
+        :param grid_points: List of (latitude, longitude) tuples defining the evaluation grid.
+        :param min_elev: Minimum elevation angle in degrees for a satellite to be visible.
+        :param K: Minimum number of visible satellites required for K-fold coverage.
+
+        :returns: Tuple with:
+            - K-fold coverage percentage;
+            - Mean Best Elevation in degrees.
         """
         obs_lats = np.radians(np.array([lat for lat, lon in grid_points]))
         obs_lons = np.radians(np.array([lon for lat, lon in grid_points]))
@@ -152,9 +190,25 @@ class Constellation:
     #=========================================================
     # AUXILIAR FUNCTIONS (Private functions)
     #========================================================= 
-    def __generate_tle_for_sat__(self, sat_num,
-                            inc, raan, ecc, argp, mean_anom, mean_mot):
+    def __generate_tle_for_sat__(self, sat_num, inc, raan, ecc, argp, mean_anom, mean_mot):
+        """
+        Auxiliary function that generates a two-line TLE for a satellite.
 
+        Creates an SGP4 satellite record from the given orbital elements, exports
+        it as a TLE, and replaces the first line's epoch and checksum with fixed
+        values.
+
+        :param self: Self
+        :param sat_num: Satellite number used in the TLE.
+        :param inc: Orbital inclination in degrees.
+        :param raan: Right ascension of the ascending node in degrees.
+        :param ecc: Orbital eccentricity.
+        :param argp: Argument of perigee in degrees.
+        :param mean_anom: Mean anomaly in degrees.
+        :param mean_mot: Mean motion in revolutions per day.
+
+        :returns: Tuple with the first and second lines of the generated TLE.
+        """
         
         from sgp4.api import jday
         jd, fr = jday(2000, 1, 1, 0, 0, 0)
@@ -184,7 +238,19 @@ class Constellation:
 
         return line1, line2
 
+
     def __alt_km_to_mean_motion__(self, alt_km):
+        """
+        Auxiliary function that converts an orbital altitude to mean motion.
+
+        Computes the semi-major axis as Earth's radius plus the orbital altitude,
+        then applies Kepler's third law to obtain the mean motion.
+
+        :param self: Self
+        :param alt_km: Orbital altitude in kilometers.
+
+        :returns: Mean motion in revolutions per day.
+        """
         mu = 398600.4418
         R  = 6378.137
         a  = R + alt_km
@@ -193,8 +259,23 @@ class Constellation:
 
     def __visible_sats__(self, sat_lats_t, sat_lons_t, obs_lat, obs_lon, min_elev):
         """
-        Retorna índices e elevações dos satélites visíveis de um ponto.
-        Critério de visibilidade idêntico a get_coverage (theta_max).
+        Auxiliary function that identifies the satellites visible from a ground point.
+
+        Uses the same geometric footprint criterion as get_coverage, based on the
+        maximum central angle theta_max. For each visible satellite, computes its
+        elevation angle and slant range.
+
+        :param self: Self
+        :param sat_lats_t: Array with the latitudes of all satellites at the current time, in radians.
+        :param sat_lons_t: Array with the longitudes of all satellites at the current time, in radians.
+        :param obs_lat: Latitude of the ground observation point in degrees.
+        :param obs_lon: Longitude of the ground observation point in degrees.
+        :param min_elev: Minimum elevation angle in degrees for a satellite to be visible.
+
+        :returns: Tuple with:
+            - Indices of the visible satellites;
+            - Elevation angles of all satellites in degrees;
+            - Slant ranges of all satellites in kilometers.
         """
         r_sat     = R + self.h
         obs_lat_r = np.radians(obs_lat)
@@ -227,9 +308,20 @@ class Constellation:
 
     def __get_sat_geometry__(self, satellites, times):
         """
-        Devolve subpontos e posições XYZ esféricas para todos os sats e instantes.
-        Único ponto de uso do Skyfield (SGP4).
-        Retorna: sat_lats, sat_lons (N_sats, N_times), sat_xyz (N_sats, N_times, 3)
+        Auxiliary function that computes the geographic subpoints and spherical
+        Cartesian positions of all satellites over the evaluation times.
+
+        Uses Skyfield/SGP4 to obtain each satellite's subpoint, then converts the
+        latitude, longitude, and orbital radius into XYZ coordinates.
+
+        :param self: Self
+        :param satellites: List of Skyfield satellite objects.
+        :param times: Skyfield time objects over which the satellite geometry is evaluated.
+
+        :returns: Tuple with:
+            - Satellite latitudes in radians, with shape (N_sats, N_times);
+            - Satellite longitudes in radians, with shape (N_sats, N_times);
+            - Satellite XYZ positions in kilometers, with shape (N_sats, N_times, 3).
         """
         subpoints = [sat.at(times).subpoint() for sat in satellites]
         sat_lats  = np.radians(np.array([sp.latitude.degrees  for sp in subpoints]))
@@ -245,16 +337,62 @@ class Constellation:
         return sat_lats, sat_lons, sat_xyz
 
     def __get_times_over_duration__(self, ts, duration_s, time_step_s):
+        """
+        Auxiliary function that generates the time instants used to evaluate the
+        constellation over a given duration.
+
+        Creates a sequence of UTC times starting at 2000-01-01 00:00:00 and spaced
+        by the specified time step.
+
+        :param self: Self
+        :param ts: Skyfield timescale object.
+        :param duration_s: Total evaluation duration in seconds.
+        :param time_step_s: Time step in seconds between consecutive instants.
+
+        :returns: Skyfield time object containing the evaluation instants.
+        """
         secs = np.arange(0, duration_s, time_step_s, dtype=float)
         hours = (secs // 3600).astype(int)
         minutes = ((secs % 3600) // 60).astype(int)
         seconds = (secs % 60).astype(float)
         return ts.utc(2000, 1, 1, hours, minutes, seconds)
 
+
     def __max_isl_length_km__(self, min_isl_alt_km=80.0):
+        """
+        Auxiliary function that computes the maximum inter-satellite link (ISL)
+        length for the constellation.
+
+        The maximum distance corresponds to the chord between two satellites at
+        the constellation altitude whose line of sight is tangent to a sphere at
+        the minimum ISL altitude.
+
+        :param self: Self
+        :param min_isl_alt_km: Minimum altitude in km that an ISL must maintain
+                            above Earth's surface.
+
+        :returns: Maximum ISL length in kilometers.
+        """
         return 2.0 * np.sqrt((R + self.h) ** 2 - (R + min_isl_alt_km) ** 2)
 
     def __isl_clear_of_earth__(self, p1, p2, min_isl_alt_km=80.0):
+        """
+        Auxiliary function that checks whether an inter-satellite link between two
+        satellites remains clear of Earth.
+
+        Computes the point on the link segment closest to Earth's center and verifies
+        whether its distance from the center is at least Earth's radius plus the
+        minimum ISL altitude.
+
+        :param self: Self
+        :param p1: Cartesian position of the first satellite in kilometers.
+        :param p2: Cartesian position of the second satellite in kilometers.
+        :param min_isl_alt_km: Minimum altitude in km that the link must maintain
+                            above Earth's surface.
+
+        :returns: True if the link does not violate the minimum altitude constraint,
+                otherwise False.
+        """
         d = p2 - p1
         denom = np.dot(d, d)
         if denom == 0:
@@ -265,7 +403,24 @@ class Constellation:
         return np.linalg.norm(closest) >= (R + min_isl_alt_km)
 
     def __create_isl_graph__(self, sat_xyz_t, min_isl_alt_km=80.0):
-        # delta = compute_optimal_delta(self.P, self.S, self.F, self.inc)
+        """
+        Auxiliary function that checks whether an inter-satellite link between two
+        satellites remains clear of Earth.
+
+        Computes the point on the link segment closest to Earth's center and verifies
+        whether its distance from the center is at least Earth's radius plus the
+        minimum ISL altitude.
+
+        :param self: Self
+        :param p1: Cartesian position of the first satellite in kilometers.
+        :param p2: Cartesian position of the second satellite in kilometers.
+        :param min_isl_alt_km: Minimum altitude in km that the link must maintain
+                            above Earth's surface.
+
+        :returns: True if the link does not violate the minimum altitude constraint,
+                otherwise False.
+        """
+        
         G = nx.Graph()
         N = self.S * self.P
         G.add_nodes_from(range(N))
@@ -290,6 +445,29 @@ class Constellation:
 
 
     def __shortest_ground_to_ground_path_ms__(self,sat_xyz_t,sat_lats_t,sat_lons_t,gw_lat,gw_lon,ut_lat,ut_lon,min_elev=25,min_isl_alt_km=80.0):
+        """
+        Auxiliary function that computes the shortest one-way propagation delay
+        between a gateway and a user terminal through the constellation.
+
+        Builds the ISL graph for the current time instant, identifies the satellites
+        visible from both ground stations, and connects each station to its visible
+        satellites. Edge weights represent propagation delays in milliseconds. The
+        shortest path is then computed using Dijkstra's algorithm.
+
+        :param self: Self
+        :param sat_xyz_t: Cartesian positions of all satellites at the current time, in kilometers.
+        :param sat_lats_t: Latitudes of all satellites at the current time, in radians.
+        :param sat_lons_t: Longitudes of all satellites at the current time, in radians.
+        :param gw_lat: Latitude of the gateway in degrees.
+        :param gw_lon: Longitude of the gateway in degrees.
+        :param ut_lat: Latitude of the user terminal in degrees.
+        :param ut_lon: Longitude of the user terminal in degrees.
+        :param min_elev: Minimum elevation angle in degrees for a satellite to be visible.
+        :param min_isl_alt_km: Minimum altitude in km that an ISL must maintain above Earth's surface.
+
+        :returns: Shortest one-way propagation delay in milliseconds, or None if
+                either ground station has no visible satellite or no valid path exists.
+        """
         
         G = self.__create_isl_graph__(sat_xyz_t, min_isl_alt_km=min_isl_alt_km)
 
@@ -318,7 +496,30 @@ class Constellation:
     # AUXILIAR FUNCTIONS (Public functions)
     #=========================================================
     def generate_tles(self, S, P, F,angle, inc_deg, alt_km, epoch="26043.12345678", bstar=1.0e-5, ecc=1.0e-7, argp_deg=0.0, name_prefix="sat"):
+        """
+        Auxiliary function that generates the TLEs for all satellites in a Walker constellation.
 
+        Satellites are distributed across P orbital planes with S satellites per plane.
+        The RAAN is uniformly distributed according to the RAAN range, while the phasing
+        factor F determines the mean-anomaly offset between planes. The mean motion is
+        derived from the orbital altitude.
+
+        :param self: Self
+        :param S: Number of satellites per orbital plane.
+        :param P: Number of orbital planes.
+        :param F: Walker phasing factor.
+        :param angle: RAAN range in degrees, usually 180 or 360.
+        :param inc_deg: Orbital inclination in degrees.
+        :param alt_km: Orbital altitude in kilometers.
+        :param epoch: TLE epoch string.
+        :param bstar: Drag term used in the TLE.
+        :param ecc: Orbital eccentricity.
+        :param argp_deg: Argument of perigee in degrees.
+        :param name_prefix: Prefix used for the satellite names.
+
+        :returns: List of tuples, where each tuple contains the first and second lines
+                of a satellite TLE.
+        """
         N = S * P
 
         tle_pairs = []

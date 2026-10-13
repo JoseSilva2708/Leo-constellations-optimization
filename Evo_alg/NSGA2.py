@@ -128,7 +128,6 @@ class NSGA2:
         return float(self.hv_metric.do(F))
 
 
-
     def compute_population_stats(self, population, gen):
         """
         Auxiliary function that calculates statistics of the metrics for every
@@ -229,7 +228,6 @@ class NSGA2:
             num_feasible, feasible_ratio,
             hv_norm
         ]
-
 
 
     def add_base_constellations(self, population):
@@ -530,6 +528,7 @@ class NSGA2:
                     
         return population
             
+         
             
     # ==========================================
     # DOMINANCE
@@ -552,8 +551,6 @@ class NSGA2:
         better_or_equal = all(pi <= qi for pi, qi in zip(ind_1.f, ind_2.f))
         strictly_better = any(pi < qi for pi, qi in zip(ind_1.f, ind_2.f))
         return better_or_equal and strictly_better
-
-
 
 
     def fast_non_dominated_sort(self, population):
@@ -636,6 +633,8 @@ class NSGA2:
 
         return unique
 
+
+
     # ==========================================
     # CROWDING DISTANCE
     # ==========================================
@@ -710,6 +709,8 @@ class NSGA2:
         """
         return 180 if inc >= 75 else 360
 
+
+
     # ==========================================
     # SELECTION
     # ==========================================
@@ -735,6 +736,7 @@ class NSGA2:
             return b
         else:
             return a if a.crowding_distance > b.crowding_distance else b
+
 
 
     # ==========================================
@@ -794,6 +796,7 @@ class NSGA2:
             offspring.append(child2)
 
         return offspring[:self.pop_size]
+
 
 
     # ==========================================
@@ -885,6 +888,7 @@ class NSGA2:
             return (1/(2*(1-u)))**(1/(self.eta_c+1))
 
 
+
     # ==========================================
     # MUTATION
     # ==========================================
@@ -938,6 +942,7 @@ class NSGA2:
         
         return x
     
+
 
     # ==========================================
     # ENVIRONMENTAL SELECTION
