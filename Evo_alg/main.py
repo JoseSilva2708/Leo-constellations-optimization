@@ -6,6 +6,17 @@ import numpy as np
 
 
 def main():
+    """
+    Main function that configures and executes the NSGA-II optimization of
+    Walker constellation parameters.
+
+    Defines the search-space bounds, the ideal and nadir points used to
+    normalize the hypervolume, and the algorithm hyperparameters. After the
+    optimization, extracts the feasible first Pareto front and saves a 3D
+    scatter plot of the coverage, cost, and latency objectives.
+
+    :returns: None.
+    """
 
     problem = {
         "bounds": {
