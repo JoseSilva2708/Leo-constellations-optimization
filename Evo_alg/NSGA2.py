@@ -521,7 +521,7 @@ class NSGA2:
             if gen == self.max_iter - 1 or convergence:
                 self.write_individuos_file(
                     population,
-                    filepath="individuos.txt",
+                    filepath="../individuos.txt",
                     only_pareto=True
                 )
                 break
