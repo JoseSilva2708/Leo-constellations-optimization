@@ -111,34 +111,46 @@ class NSGA2:
 
 
     def compute_hypervolume(self, population):
+        """
+        Calculates the hypervolume of the feasible first Pareto front.
+
+        :param self: Self
+        :param population: Set of individuals from a certain generation
+
+        :returns: Hypervolume value of the feasible first Pareto front;
+            0.0 if there are no feasible Pareto individuals.
+        """
         F = np.array([ind.f for ind in population if ind.rank == 0 and ind.feasible == True], dtype=float)
 
         if len(F) == 0:
             return 0.0
-        
-        F_norm = (F - self.hv_ideal) / (self.hv_nadir - self.hv_ideal)
-        #print("F raw:\n", F)
-        #print("F norm:\n", F_norm)
-        #print("max per objective:", np.max(F_norm, axis=0))
-        #print("ref_point:", self.hv_metric.ref_point)
 
         return float(self.hv_metric.do(F))
 
+
+
     def compute_population_stats(self, population, gen):
         """
-        Auxiliar function that calculates the stats of the metrics for every generation and the number of pareto individuals (min, max, mean, deviation)
-        
+        Auxiliary function that calculates statistics of the metrics for every
+        generation, Pareto front sizes, feasibility information, and the normalized
+        hypervolume.
+
         :param self: Self
-        :param population: Set of individuals from certain generation
-        :param gen: Number of generation
-        
+        :param population: Set of individuals from a certain generation
+        :param gen: Number of the generation
+
         :returns: Array with:
-            - Number of generation;
-            - For the 3 metrics:
+            - Generation number;
+            - For the 3 metrics (coverage, cost, latency):
                 - Mean;
-                - Best values;
-                - Worst values;
-            - Pareto size.
+                - Standard deviation;
+                - Best value;
+                - Worst value;
+            - Pareto front size;
+            - Feasible Pareto front size;
+            - Number of feasible individuals;
+            - Feasible ratio;
+            - Normalized hypervolume.
         """
         feasible = [ind for ind in population if ind.feasible == True]
         
@@ -221,6 +233,17 @@ class NSGA2:
 
 
     def add_base_constellations(self, population):
+        """
+        Creates the initial population using reference Walker constellation
+        shells from Starlink, Amazon Kuiper, Guowang, Telesat, and OneWeb.
+
+        :param self: Self
+        :param population: Initial population (replaced by the base constellations)
+
+        :returns: Tuple with:
+            - Population containing the base constellations;
+            - Number of base constellations added.
+    """
         base_constellations = []
         
         #StarLink
@@ -315,7 +338,10 @@ class NSGA2:
 
         Coverage is computed as the combination of two metrics (k-fold coverage and minimum
         beam elevation), normalized and negated so that the problem becomes a minimization.
-        Cost represents the total number of satellites in the constellation (S * P).
+        Cost represents the deployment cost of the constellation, calculated as
+        0.4 * (S * P) + 30 * P, where S is the number of satellites per plane,
+        P is the number of orbital planes, S * P is the total number of satellites,
+        and P accounts for the cost associated with the number of orbital planes.
         Latency represents the estimated end-to-end propagation delay in milliseconds.
 
         :param self: Self
@@ -325,7 +351,6 @@ class NSGA2:
         :param timescale: Skyfield Timescale object used to generate satellite positions
         :param min_elev: Minimum elevation angle (degrees) for a satellite to be considered visible from a ground point
         """
-        #DEBUG
         i = 0
         for individual in population:
             
@@ -377,12 +402,12 @@ class NSGA2:
 
     def write_individuos_file(self, population, filepath="individuos.txt", only_pareto=True):
         """
-        Escreve os parâmetros das constelações para um ficheiro CSV simples:
+        Writes the constellation parameters to a simple CSV file:
         S,P,F,inc,h
 
-        - inc é escrito com 2 casas decimais
-        - h é convertido de km para metros
-        - se only_pareto=True, escreve apenas os indivíduos da frente de Pareto
+        - inc is written with 2 decimal places
+        - h is converted from km to meters
+        - if only_pareto=True, only individuals from the Pareto front are written
         """
 
         individuals_to_write = population
@@ -416,11 +441,13 @@ class NSGA2:
     
     def run(self, problem):
         """
-        Executes the Evolutionary Algorithm optimization loop over a fixed number of generations.
+        Executes the Evolutionary Algorithm optimization loop until the maximum
+        number of generations is reached or convergence is detected.
 
         The algorithm follows the standard NSGA-II pipeline:
         1. Initialize a random population within the given parameter bounds.
-        2. Evaluate the metrics of each individual (coverage, cost, latency). The fitness is only coverage and cost
+        2. Evaluate the metrics of each individual: coverage, cost, and latency.
+        The optimization objectives are coverage and cost.
         3. For each generation:
             a. Perform fast non-dominated sorting to rank individuals into Pareto fronts.
             b. Compute crowding distance within each front to preserve diversity.
@@ -430,17 +457,21 @@ class NSGA2:
             using non-domination rank and crowding distance as selection criteria.
             f. Log generation statistics.
 
+        Convergence is detected when the variation of the normalized hypervolume
+        over the last 10 generations is at most 2e-3. When convergence is detected
+        or the final generation is reached, the Pareto-front individuals are written
+        to "individuos.txt".
+
         The constellation search space is defined by the bounds in "problem", covering
         the Walker parameters S (satellites per plane), P (number of planes), F (phasing
-        factor), inc (inclination) and h (altitude). Coverage is evaluated over a
+        factor), inc (inclination), and h (altitude). Coverage is evaluated over a
         latitude/longitude grid at hourly intervals over a 50-hour window. Latency is
         evaluated as the mean propagation delay over one full orbital period.
 
         :param problem: Dictionary with key "bounds", mapping each parameter name
                         (S, P, F, inc, h) to a (min, max) tuple defining the search space.
 
-        :returns: Final population after "max_iter" generations, sorted by
-                non-domination rank.
+        :returns: Final population after the optimization loop.
         """
         
         bounds = problem["bounds"]
@@ -449,8 +480,8 @@ class NSGA2:
         population = self.initialize_population(bounds)
         
         
-        lats = np.arange(-60, 61, 4) # Usar 1-4 para produção e 5-15 para debug
-        lons = np.arange(-180, 181, 4) # Usar 1-4 para produção e 5-15 para debug
+        lats = np.arange(-60, 61, 4)
+        lons = np.arange(-180, 181, 4)
         grid_points = list(product(lats, lons))
         min_elev = 25
         ts = load.timescale()
@@ -577,6 +608,20 @@ class NSGA2:
 
 
     def remove_duplicates(self, population):
+        """
+        Removes duplicate individuals from the population based on their
+        decision variables.
+
+        Two individuals are considered duplicates when they have the same
+        S, P, F, and angle values, and their inclination and altitude values
+        are equal after rounding to 2 decimal places.
+
+        :param self: Self
+        :param population: List of Individual objects to filter.
+
+        :returns: List with the first occurrence of each unique individual,
+                preserving the original order.
+        """
         seen = set()
         unique = []
 
@@ -595,6 +640,24 @@ class NSGA2:
     # CROWDING DISTANCE
     # ==========================================
     def crowding_distance(self, front):
+        """
+        Computes the crowding distance for the individuals in a Pareto front.
+
+        Boundary individuals receive an infinite crowding distance. For the
+        remaining individuals, the distance is accumulated over the three
+        objectives using the normalized spacing between neighboring solutions.
+
+        Individuals with duplicated objective vectors, excluding boundary
+        solutions, receive a crowding distance of 0.0 to avoid overestimating
+        diversity.
+
+        :param self: Self
+        :param front: List of Individual objects belonging to the same Pareto front.
+                    Each individual must have a valid .f attribute with 3 objectives.
+
+        :returns: None. The crowding distance is stored in each individual's
+                crowding_distance attribute.
+        """
         n = len(front)
 
         if n == 0:
@@ -637,6 +700,14 @@ class NSGA2:
 
 
     def compute_angle(self, inc):
+        """
+        Auxiliary function that determines the RAAN range based on the orbital inclination.
+
+        :param self: Self
+        :param inc: Orbital inclination in degrees.
+
+        :returns: 180 for inclined orbits (inc >= 75 degrees), otherwise 360.
+        """
         return 180 if inc >= 75 else 360
 
     # ==========================================
@@ -644,13 +715,17 @@ class NSGA2:
     # ==========================================
     def tournament(self, population):
         """
-        Function that is responsible for the selection part: This function selects randomly 2 parents from the population and does a 
-        tournament between those parents. If the rank of parent A is better than parent B, select parent A.
-        Otherwise, select Parent B.
-        If Both parents have the same rank, selects the parent with higher crowdind_distance to achieve a better population diversity. 
-        
-        :param self: Self class
-        :param population: Population that is being evaluated
+        Auxiliary function that performs a binary tournament selection.
+
+        Two parents are randomly selected from the population. The parent with
+        the better (lower) non-domination rank is selected. If both parents have
+        the same rank, the parent with the higher crowding distance is selected
+        to promote population diversity.
+
+        :param self: Self
+        :param population: Population from which the parents are selected.
+
+        :returns: The winning Individual.
         """
         a, b = random.sample(population, 2)
 
@@ -667,31 +742,22 @@ class NSGA2:
     # ==========================================
     def make_offspring(self, population, bounds):  
         """
-        Generate the offspring population for the next generation.
+        Auxiliary function that generates the offspring population for the next
+        generation using tournament selection, crossover, and mutation.
 
-        This method applies the standard genetic operators used in NSGA-II.
-        Parents are selected from the current population using tournament
-        selection. With a given crossover probability, their decision variables
-        are recombined to produce two offspring solutions. Otherwise, the
-        offspring are simple copies of the parents. Mutation is then applied
-        to each offspring to introduce additional diversity.
+        Parents are selected from the current population. With probability
+        p_crossover, their decision variables are recombined to create two
+        offspring; otherwise, the offspring are copies of the parents. Mutation
+        is then applied to each offspring. The process repeats until the desired
+        population size is reached.
 
-        The process repeats until the desired population size is reached.
+        :param self: Self
+        :param population: Current population from which parents are selected.
+        :param bounds: Lower and upper bounds for each decision variable, used to
+                    keep the generated solutions within the search space.
 
-        Parameters:
-            - population : Current population of individuals from which parents are selected.
-                        Each individual contains the decision variables and attributes
-                        such as rank and crowding distance used during tournament selection.
-
-            - bounds : Lower and upper bounds for each decision variable. These bounds
-                        are used by the crossover and mutation operators to ensure that
-                        generated solutions remain within the feasible search space.
-
-        Returns:
-            - A list of newly created individuals representing the offspring
-                population. The size of the returned list is equal to `self.pop_size`.
-                The offspring are not yet evaluated (objective values are assigned
-                later in the evaluation phase).
+        :returns: List of offspring individuals with size equal to self.pop_size.
+                The offspring are not yet evaluated.
         """
         
         offspring = []
@@ -736,9 +802,26 @@ class NSGA2:
 
     def crossover(self, x1, x2, bounds):
         """
-        x = [S, P, F, inc, h]
-        índices 0-3: discretos/inteiros
-        índices 4-5: contínuos
+        Auxiliary function that recombines two parent solutions to generate two offspring.
+
+        The discrete Walker parameters S, P, and F are recombined using a two-point
+        crossover, while the RAAN range (angle) is inherited from the corresponding
+        parent. The continuous parameters, inclination and altitude, are recombined
+        using Simulated Binary Crossover (SBX) with probability 0.5 and are clipped
+        to the search-space bounds.
+
+        Finally, the phasing factor F is corrected to satisfy the Walker constraint
+        F < P.
+
+        :param self: Self
+        :param x1: Decision variables of the first parent, in the format
+                [S, P, F, angle, inc, h].
+        :param x2: Decision variables of the second parent, in the format
+                [S, P, F, angle, inc, h].
+        :param bounds: Dictionary with the lower and upper bounds for the continuous
+                    parameters "inc" and "h".
+
+        :returns: Tuple with two offspring decision-variable vectors.
         """
 
         # Discrete/int crossover on [S, P, F, angle]
@@ -807,7 +890,22 @@ class NSGA2:
     # ==========================================
     def mutation(self, x, bounds):
         """
-        x = [S, P, F, angle, inc, h]
+        Auxiliary function that applies mutation to a decision-variable vector.
+
+        The discrete Walker parameters S, P, and F are mutated by a random integer
+        step within 20% of their respective search range. The continuous parameters,
+        inclination and altitude, are mutated using polynomial mutation and clipped
+        to the search-space bounds.
+
+        The Walker constraint F < P is enforced after mutating P and F. The RAAN
+        range is then updated according to the resulting orbital inclination.
+
+        :param self: Self
+        :param x: Decision-variable vector in the format [S, P, F, angle, inc, h].
+        :param bounds: Dictionary with the lower and upper bounds for the parameters
+                    S, P, F, inc, and h.
+
+        :returns: Mutated decision-variable vector.
         """
 
         # Integer mutation for S, P, F

@@ -61,7 +61,7 @@ def main():
 
     plt.title("NSGA-II Final Pareto Front\n(Coverage-Cost-Latency)", fontsize=14, pad=20)
     
-    #Seaborn -> VER!!!!
+    
     plt.savefig('output_images/pareto_3d_final.png', dpi=300, bbox_inches='tight')
     plt.savefig('output_images/pareto_3d_final.pdf', bbox_inches='tight')
     plt.close()
