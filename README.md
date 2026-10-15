@@ -39,6 +39,31 @@ leo-constellation-optimization/
 - `Evo_alg/` contains the evolutionary optimization framework.
 - `Hypatia-simulator-Thesis/` contains the Hypatia/ns-3 simulation environment.
 
+## Requirements
+
+This project requires **Python 3.10**, which is the version used for the
+Hypatia/ns-3 experimental setup.
+
+Create and activate a virtual environment:
+
+```bash
+python3.10 -m venv .venv
+source .venv/bin/activate
+```
+
+On Windows:
+
+```powershell
+py -3.10 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+Install the Python dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
 ## Running the Framework
 
 The complete optimization and simulation workflow can be executed using:
@@ -55,8 +80,22 @@ This script automates the main stages of the framework:
 4. Runs the ns-3 simulations.
 5. Collects and organizes the simulation results.
 
-Before running the script, review the configuration files and ensure that the
-required Python and Hypatia/ns-3 dependencies are installed.
+Before running the script, ensure that the Hypatia dependencies and simulator
+are installed. The Hypatia setup scripts are available in:
+
+```bash
+Hypatia-simulator-Thesis/hypatia_install_dependencies.sh
+Hypatia-simulator-Thesis/hypatia_build.sh
+```
+
+The Hypatia build was adapted in this project to use an optimized ns-3 build:
+
+```bash
+bash build.sh optimized disable-werror
+```
+
+Refer to the documentation inside `Hypatia-simulator-Thesis/` for additional
+system dependencies and build details.
 
 ## Constellation Parameters
 
@@ -76,6 +115,31 @@ Where:
 
 The optimization seeks feasible trade-offs between these parameters rather
 than a single optimal constellation.
+
+## Optimization Objectives
+
+The framework evaluates three objectives:
+
+- **Coverage:** combines 2-fold coverage and Mean Best Elevation (MBE).
+- **Deployment cost:** simplified cost model based on the number of satellites
+  and orbital planes.
+- **Propagation delay:** estimated round-trip propagation delay between
+  selected ground-station pairs.
+
+Candidate constellations that do not satisfy the coverage, elevation, delay,
+or connectivity requirements are treated as infeasible.
+
+## Outputs
+
+The optimization exports the feasible Pareto-front constellations and
+generation statistics. The exported constellation file uses the format:
+
+```csv
+S,P,F,inc,h
+```
+
+The Hypatia/ns-3 workflow produces results for propagation-delay validation,
+end-to-end latency, and packet-level network performance.
 
 ## Technologies
 
